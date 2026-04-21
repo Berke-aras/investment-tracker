@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PortfolioTrack | Kişisel Yatırım Paneli</title>
+    <meta name="description" content="Gelişmiş yatırım takip paneli ile altın, gümüş ve fon portföyünüzü yönetin.">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="css/style.css">
+
+    <!-- Chart.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+</head>
+<body class="dark-theme">
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo-container">
+                <div class="logo-icon">&#8378;</div>
+                <div class="logo-text">
+                    <h1>PortfolioTrack</h1>
+                    <span>Yatırım Yönetimi</span>
+                </div>
+            </div>
+
+            <nav class="main-nav">
+                <button class="nav-item active" id="nav-dashboard">
+                    <span class="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span> Panel
+                </button>
+                <button class="nav-item" id="nav-assets">
+                    <span class="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></span> Varlıklarım
+                </button>
+                <button class="nav-item" id="nav-settings">
+                    <span class="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></span> Ayarlar
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="date-display" id="current-date">--:--:--</div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Data Status Banner -->
+            <div class="status-banner status-neutral" id="data-status-banner">
+                <span>Başlatılıyor...</span>
+            </div>
+
+            <header class="top-bar">
+                <div class="welcome-text">
+                    <h2>Hoş Geldiniz, <span id="user-name">Yatırımcı</span></h2>
+                    <p>Bugün portföyünüzün özeti.</p>
+                </div>
+                <div class="user-actions">
+                    <button class="btn btn-primary" id="add-asset-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        Yeni Varlık
+                    </button>
+                </div>
+            </header>
+
+            <!-- Summary Cards -->
+            <section class="summary-grid">
+                <div class="glass-card summary-card" id="card-total-value">
+                    <span class="card-label">Toplam Portföy</span>
+                    <div class="card-value">&mdash;</div>
+                    <div class="card-trend neutral">Veri bekleniyor...</div>
+                </div>
+                <div class="glass-card summary-card" id="card-daily-change">
+                    <span class="card-label">Günlük Değişim</span>
+                    <div class="card-value">&mdash;</div>
+                    <div class="card-trend" id="daily-trend-pct">--</div>
+                </div>
+                <div class="glass-card summary-card" id="card-best-performer">
+                    <span class="card-label">En İyi Performans</span>
+                    <div class="card-value">&mdash;</div>
+                    <div class="card-trend up" id="best-asset-pct">--</div>
+                </div>
+                <div class="glass-card summary-card" id="card-total-assets">
+                    <span class="card-label">Varlık Sayısı</span>
+                    <div class="card-value">&mdash;</div>
+                    <div class="card-trend neutral">Takip edilen</div>
+                </div>
+            </section>
+
+            <!-- Chart Section -->
+            <section class="chart-section glass-card">
+                <div class="chart-header">
+                    <div class="chart-info">
+                        <div class="active-asset-info">
+                            <h3 id="chart-asset-name">--</h3>
+                            <span id="chart-asset-price">--</span>
+                        </div>
+                        <div id="chart-asset-change" class="price-change">--</div>
+                    </div>
+                    <div class="range-selector" id="range-selector">
+                        <button class="range-btn" data-range="1A">1A</button>
+                        <button class="range-btn" data-range="3A">3A</button>
+                        <button class="range-btn" data-range="6A">6A</button>
+                        <button class="range-btn active" data-range="1Y">1Y</button>
+                        <button class="range-btn" data-range="3Y">3Y</button>
+                        <button class="range-btn" data-range="5Y">5Y</button>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="main-chart"></canvas>
+                </div>
+                <div class="chart-footer-stats" id="chart-stats">
+                    <div class="stat-box">
+                        <span class="stat-label">Dönem Açılış</span>
+                        <span class="stat-value" id="stat-open">&mdash;</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-label">En Yüksek</span>
+                        <span class="stat-value" id="stat-high">&mdash;</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-label">En Düşük</span>
+                        <span class="stat-value" id="stat-low">&mdash;</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-label">Ortalama</span>
+                        <span class="stat-value" id="stat-avg">&mdash;</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Assets Table -->
+            <section class="assets-section">
+                <div class="section-header">
+                    <h3>Varlık Listesi</h3>
+                    <div class="asset-tabs" id="asset-type-tabs">
+                        <button class="tab-btn active" data-filter="all">Tümü</button>
+                        <button class="tab-btn" data-filter="fon">Fonlar</button>
+                        <button class="tab-btn" data-filter="hisse">Hisseler</button>
+                        <button class="tab-btn" data-filter="kripto">Kripto</button>
+                        <button class="tab-btn" data-filter="doviz">Döviz</button>
+                        <button class="tab-btn" data-filter="emtia">Emtia</button>
+                    </div>
+                </div>
+                <div class="table-container glass-card">
+                    <table class="assets-table">
+                        <thead>
+                            <tr>
+                                <th>Varlık</th>
+                                <th>Güncel Fiyat</th>
+                                <th>24S</th>
+                                <th>1 Ay</th>
+                                <th>1 Yıl</th>
+                                <th>Gidişat</th>
+                                <th>Eylem</th>
+                            </tr>
+                        </thead>
+                        <tbody id="assets-table-body">
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Add Asset Modal -->
+    <div class="modal-overlay" id="add-asset-modal">
+        <div class="modal glass-card">
+            <div class="modal-header">
+                <h3>Yeni Varlık Ekle</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form id="add-asset-form">
+                <div class="form-group">
+                    <label for="asset-name">Sembol</label>
+                    <input type="text" id="asset-name" placeholder="Orn: BTC, XAU/TRY, USD/TRY, PHE" required maxlength="20">
+                    <small class="form-hint">Turk fonlari icin 3 harfli kod girin (orn: PHE, TB2, HZR). Hisse icin SPY.US gibi uzanti kullanin.</small>
+                </div>
+                <div class="form-group">
+                    <label for="asset-type">Varlık Türü</label>
+                    <select id="asset-type">
+                        <option value="emtia">Emtia / Değerli Metal</option>
+                        <option value="kripto">Kripto Para</option>
+                        <option value="hisse">Hisse Senedi</option>
+                        <option value="fon">Yatırım Fonu</option>
+                        <option value="doviz">Döviz</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="asset-quantity">Miktar / Çarpan</label>
+                    <input type="number" id="asset-quantity" step="0.01" min="0.01" value="1" placeholder="Kaç adet/birim">
+                    <small class="form-hint">Portfoy degeri = anlik fiyat x miktar. Ornek: 2.5 gram altin veya 10 adet fon.</small>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary close-modal">İptal</button>
+                    <button type="submit" class="btn btn-primary">Varlığı Ekle</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/utils.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
