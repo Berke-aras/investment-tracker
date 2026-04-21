@@ -212,6 +212,8 @@ body::before {
     align-items: center;
     margin-bottom: 2.5rem;
 }
+.user-actions { display: flex; align-items: center; gap: 12px; }
+.refresh-info { color: var(--text-secondary); font-size: 0.85rem; font-family: var(--font-mono); }
 
 .welcome-text h2 { font-size: 1.8rem; font-weight: 600; margin-bottom: 4px; }
 .welcome-text p { color: var(--text-secondary); font-size: 0.95rem; }
@@ -251,6 +253,10 @@ body::before {
     font-size: 0.85rem; font-weight: 500;
     display: flex; align-items: center; gap: 4px;
 }
+.card-sparkline { height: 26px; margin-top: 10px; }
+
+.portfolio-distribution { padding: 1.5rem; margin-bottom: 2.5rem; }
+.distribution-chart-container { height: 220px; }
 
 .up { color: var(--up-color); }
 .down { color: var(--down-color); }
@@ -339,6 +345,7 @@ body::before {
 .assets-section .section-header {
     display: flex; justify-content: space-between;
     align-items: center; margin-bottom: 1.5rem;
+    gap: 12px;
 }
 
 .asset-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -365,6 +372,16 @@ body::before {
     text-transform: uppercase; letter-spacing: 1px;
     color: var(--text-muted); border-bottom: 1px solid var(--glass-border);
 }
+.sort-btn {
+    background: transparent;
+    border: none;
+    color: inherit;
+    font: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    cursor: pointer;
+}
+.sort-btn.active { color: var(--accent-primary); }
 
 .assets-table td {
     padding: 1.25rem 1.5rem; font-size: 0.95rem;
@@ -372,7 +389,12 @@ body::before {
 }
 
 .assets-table tr:last-child td { border-bottom: none; }
+.assets-table tr { transition: var(--transition-fast); }
 .assets-table tr:hover { background: rgba(255, 255, 255, 0.02); }
+.assets-table tr.row-active {
+    background: rgba(201, 168, 76, 0.08);
+    box-shadow: inset 3px 0 0 var(--accent-primary);
+}
 
 .asset-cell { display: flex; align-items: center; gap: 12px; }
 
@@ -441,6 +463,23 @@ body::before {
     background: var(--glass-bg); color: var(--text-primary);
     border: 1px solid var(--glass-border);
 }
+.danger-outline { color: var(--down-color); border-color: rgba(239, 68, 68, 0.5); }
+.danger-solid { background: var(--down-color); }
+.danger-solid:hover { background: #dc2626; }
+
+.btn.loading {
+    opacity: 0.7;
+    pointer-events: none;
+}
+.btn.loading::after {
+    content: '';
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
 
 /* Modals */
 .modal-overlay {
@@ -484,6 +523,20 @@ body::before {
     color: white; font-family: inherit; font-size: 0.95rem;
 }
 
+.asset-search-input {
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+    color: var(--text-primary);
+    min-width: 220px;
+}
+
+.asset-search-input:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
 .form-group input:focus {
     outline: none;
     border-color: var(--accent-primary);
@@ -500,6 +553,30 @@ body::before {
 }
 
 .modal-footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 2rem; }
+.confirm-modal-message { color: var(--text-secondary); line-height: 1.6; }
+
+.view-panel { display: none; }
+.view-panel.active { display: block; }
+
+.settings-view-card { padding: 2.5rem; }
+.settings-container { display: flex; flex-direction: column; gap: 2rem; }
+.settings-section h3 { margin-bottom: 1rem; color: var(--accent-primary); }
+.settings-section p { color: var(--text-secondary); }
+
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-secondary);
+}
+.empty-state h4 { margin-bottom: 8px; color: var(--text-primary); }
+
+.tab-count {
+    margin-left: 6px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.08);
+    font-size: 0.75rem;
+}
 
 /* Settings - Provider Health */
 .provider-health-grid {
@@ -608,6 +685,8 @@ body::before {
     .chart-footer-stats { grid-template-columns: 1fr 1fr; }
     .chart-header { flex-direction: column; gap: 1rem; }
     .range-selector { align-self: flex-start; }
+    .user-actions { flex-wrap: wrap; justify-content: flex-end; }
+    .asset-search-input { min-width: 100%; }
 }
 
 @media (max-width: 480px) {

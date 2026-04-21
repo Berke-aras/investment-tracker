@@ -8,9 +8,17 @@ const PortfolioApp = {
         activeAssetId: null,
         activeRange: '1Y',
         activeFilter: 'all',
+        searchTerm: '',
+        sortKey: null,
+        sortDir: 'desc',
         activeView: 'dashboard',
         chartInstance: null,
+        distributionChartInstance: null,
         isLoading: false,
+        editingAssetId: null,
+        confirmAction: null,
+        userName: 'Yatırımcı',
+        nextRefreshAt: 0,
         dataStatus: { total: 0, real: 0, stale: 0, unavailable: 0 }
     },
 
@@ -22,6 +30,9 @@ const PortfolioApp = {
     async init() {
         this.state.assets = StorageService.getAssets();
         this.state.activeAssetId = this.state.assets[0]?.id || null;
+        this.state.userName = StorageService.getUserName();
+        this.state.nextRefreshAt = Date.now() + 300000;
+        this._applyUserName();
 
         StorageService.onError(msg => this.showBanner(msg, 'error'));
 
@@ -30,7 +41,10 @@ const PortfolioApp = {
         await this.syncRealPrices();
         this.updateUI();
         this.startClock();
-        this._refreshTimer = setInterval(() => this.syncRealPrices().then(() => this.updateUI()), 300000);
+        this._refreshTimer = setInterval(() => {
+            this.state.nextRefreshAt = Date.now() + 300000;
+            this.syncRealPrices().then(() => this.updateUI());
+        }, 300000);
     },
 
     // ── Data Sync ──────────────────────────────────────────
@@ -165,6 +179,7 @@ const PortfolioApp = {
     async retrySyncUI() {
         this.renderStatusBanner('loading');
         PriceService._negCache.clear();
+        this.state.nextRefreshAt = Date.now() + 300000;
         await this.syncRealPrices();
         this.updateUI();
     },
@@ -196,6 +211,23 @@ const PortfolioApp = {
                 this.renderTable();
             });
         });
+        document.getElementById('asset-search-input').addEventListener('input', (e) => {
+            this.state.searchTerm = e.target.value.trim().toLowerCase();
+            this.renderTable();
+        });
+        document.querySelectorAll('.sort-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.sort;
+                if (this.state.sortKey === key) {
+                    this.state.sortDir = this.state.sortDir === 'asc' ? 'desc' : 'asc';
+                } else {
+                    this.state.sortKey = key;
+                    this.state.sortDir = 'desc';
+                }
+                this._updateSortButtons();
+                this.renderTable();
+            });
+        });
 
         const modal = document.getElementById('add-asset-modal');
         document.getElementById('add-asset-btn').addEventListener('click', () => modal.classList.add('open'));
@@ -208,12 +240,89 @@ const PortfolioApp = {
             e.preventDefault();
             this.handleAddAsset();
         });
+        document.getElementById('refresh-now-btn').addEventListener('click', () => this.retrySyncUI());
+        document.getElementById('reset-data-btn').addEventListener('click', () => {
+            this.openConfirm('Veriler sıfırlansın mı?', 'Tüm varlıklar ve geçmiş veriler silinecek.', () => this.resetApp());
+        });
+        document.getElementById('save-user-name-btn').addEventListener('click', () => this.saveUserName());
+        document.getElementById('edit-asset-form').addEventListener('submit', (e) => this.submitEditAsset(e));
+        document.querySelectorAll('[data-close-confirm]').forEach(btn => btn.addEventListener('click', () => this.closeConfirm()));
+        document.querySelectorAll('[data-close-edit]').forEach(btn => btn.addEventListener('click', () => this.closeEditModal()));
+        document.getElementById('confirm-modal-ok-btn').addEventListener('click', () => {
+            if (typeof this.state.confirmAction === 'function') this.state.confirmAction();
+            this.closeConfirm();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                document.getElementById('add-asset-modal').classList.remove('open');
+                this.closeConfirm();
+                this.closeEditModal();
+            }
+        });
     },
 
     updateRangeButtons() {
         document.querySelectorAll('.range-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.range === this.state.activeRange);
         });
+    },
+
+    _updateSortButtons() {
+        document.querySelectorAll('.sort-btn').forEach(btn => {
+            const active = btn.dataset.sort === this.state.sortKey;
+            btn.classList.toggle('active', active);
+            btn.textContent = btn.textContent.replace(/ [↑↓]$/, '');
+            if (active) btn.textContent += this.state.sortDir === 'asc' ? ' ↑' : ' ↓';
+        });
+    },
+
+    _applyUserName() {
+        const el = document.getElementById('user-name');
+        if (el) el.textContent = this.state.userName;
+        const input = document.getElementById('settings-user-name');
+        if (input) input.value = this.state.userName;
+    },
+
+    _updateStorageUsage() {
+        const el = document.getElementById('storage-usage-text');
+        if (el) el.textContent = 'Kullanım: ' + StorageService.getStorageUsageKB() + ' KB';
+    },
+
+    openConfirm(title, message, action) {
+        document.getElementById('confirm-modal-title').textContent = title;
+        document.getElementById('confirm-modal-message').textContent = message;
+        this.state.confirmAction = action;
+        document.getElementById('confirm-modal').classList.add('open');
+    },
+    closeConfirm() {
+        document.getElementById('confirm-modal').classList.remove('open');
+        this.state.confirmAction = null;
+    },
+    openEditModal(asset) {
+        this.state.editingAssetId = asset.id;
+        document.getElementById('edit-asset-quantity').value = String(asset.multiplier || 1);
+        document.getElementById('edit-asset-modal').classList.add('open');
+    },
+    closeEditModal() {
+        document.getElementById('edit-asset-modal').classList.remove('open');
+        this.state.editingAssetId = null;
+    },
+
+    submitEditAsset(e) {
+        e.preventDefault();
+        const id = this.state.editingAssetId;
+        const asset = this.state.assets.find(a => a.id === id);
+        if (!asset) return this.closeEditModal();
+        const parsed = parseFloat(document.getElementById('edit-asset-quantity').value);
+        if (!isFinite(parsed) || parsed <= 0) {
+            this.showBanner('Geçersiz miktar. 0 dan büyük sayı girin.', 'warning');
+            return;
+        }
+        asset.multiplier = parsed;
+        StorageService.saveAssets(this.state.assets);
+        this.closeEditModal();
+        this.showBanner(asset.name + ' miktarı güncellendi.', 'ok');
+        this.updateUI();
     },
 
     // ── Add / Remove Asset ─────────────────────────────────
@@ -238,6 +347,9 @@ const PortfolioApp = {
         };
 
         this.state.assets.push(newAsset);
+        const submitBtn = document.getElementById('submit-add-asset-btn');
+        submitBtn.disabled = true;
+        submitBtn.classList.add('loading');
 
         const result = await PriceService.getPrice(newAsset);
         if (result.ok) {
@@ -260,6 +372,8 @@ const PortfolioApp = {
         StorageService.saveAssets(this.state.assets);
         document.getElementById('add-asset-modal').classList.remove('open');
         document.getElementById('add-asset-form').reset();
+        submitBtn.disabled = false;
+        submitBtn.classList.remove('loading');
 
         this.state.dataStatus.total = this.state.assets.length;
         this.renderStatusBanner();
@@ -267,35 +381,25 @@ const PortfolioApp = {
     },
 
     removeAsset(id) {
-        this.state.assets = this.state.assets.filter(a => a.id !== id);
-        delete this.state.assetData[id];
-        StorageService.removeHistory(id);
-        if (this.state.activeAssetId === id) {
-            this.state.activeAssetId = this.state.assets[0]?.id || null;
-        }
-        StorageService.saveAssets(this.state.assets);
-        this.state.dataStatus.total = this.state.assets.length;
-        this.updateUI();
+        const asset = this.state.assets.find(a => a.id === id);
+        if (!asset) return;
+        this.openConfirm('Varlık silinsin mi?', asset.name + ' portföyden kaldırılacak.', () => {
+            this.state.assets = this.state.assets.filter(a => a.id !== id);
+            delete this.state.assetData[id];
+            StorageService.removeHistory(id);
+            if (this.state.activeAssetId === id) {
+                this.state.activeAssetId = this.state.assets[0]?.id || null;
+            }
+            StorageService.saveAssets(this.state.assets);
+            this.state.dataStatus.total = this.state.assets.length;
+            this.updateUI();
+        });
     },
 
     editAsset(id) {
         const asset = this.state.assets.find(a => a.id === id);
         if (!asset) return;
-
-        const current = asset.multiplier || 1;
-        const input = prompt(asset.name + ' icin yeni miktar/carpan degeri girin:', String(current));
-        if (input === null) return;
-
-        const parsed = parseFloat(String(input).replace(',', '.'));
-        if (!isFinite(parsed) || parsed <= 0) {
-            this.showBanner('Gecersiz miktar. 0 dan buyuk sayi girin.', 'warning');
-            return;
-        }
-
-        asset.multiplier = parsed;
-        StorageService.saveAssets(this.state.assets);
-        this.showBanner(asset.name + ' miktari guncellendi.', 'ok');
-        this.updateUI();
+        this.openEditModal(asset);
     },
 
     setActive(id) {
@@ -306,9 +410,13 @@ const PortfolioApp = {
     // ── UI Rendering ───────────────────────────────────────
     updateUI() {
         this.renderSummary();
+        this.renderDistributionChart();
         this.renderTable();
         this.renderChart().catch(e => console.warn('Chart render hatasi:', e));
         this.updateRangeButtons();
+        this.updateTabCounts();
+        this._updateRefreshCountdown();
+        this._updateStorageUsage();
     },
 
     renderSummary() {
@@ -377,33 +485,43 @@ const PortfolioApp = {
 
         document.getElementById('card-total-assets').querySelector('.card-value').textContent =
             this.state.assets.length;
+        this._renderSummarySparkline('card-total-value');
+        this._renderSummarySparkline('card-daily-change');
+        this._renderSummarySparkline('card-best-performer');
+        this._renderSummarySparkline('card-total-assets');
     },
 
     renderTable() {
         const tbody = document.getElementById('assets-table-body');
         tbody.innerHTML = '';
+        const rows = this.state.assets
+            .filter(a => this.state.activeFilter === 'all' || a.type === this.state.activeFilter)
+            .filter(a => {
+                if (!this.state.searchTerm) return true;
+                return a.name.toLowerCase().includes(this.state.searchTerm) ||
+                    a.symbol.toLowerCase().includes(this.state.searchTerm);
+            })
+            .map(asset => {
+                const info = this.state.assetData[asset.id];
+                const history = this._getRenderableHistory(asset.id, info);
+                const p1 = Utils.getChangeFromHistory(history, 1) ?? info?.change24h ?? null;
+                const p30 = Utils.getChangeFromHistory(history, 30);
+                const p365 = Utils.getChangeFromHistory(history, 365);
+                return { asset, info, history, price: info?.price, p1, p30, p365 };
+            });
+        const sorted = this._sortRows(rows);
 
-        const filtered = this.state.assets.filter(a =>
-            this.state.activeFilter === 'all' || a.type === this.state.activeFilter
-        );
-
-        if (filtered.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:3rem;color:var(--text-muted)">' +
-                'Henüz varlık eklenmedi.</td></tr>';
+        if (sorted.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><h4>Varlık bulunamadı</h4><p>İlk varlığınızı ekleyerek başlayın veya aramayı temizleyin.</p></div></td></tr>';
             return;
         }
 
-        filtered.forEach(asset => {
-            const info = this.state.assetData[asset.id];
-            const price = info?.price;
-            const history = this._getRenderableHistory(asset.id, info);
-            const p1 = Utils.getChangeFromHistory(history, 1) ?? info?.change24h ?? null;
-            const p30 = Utils.getChangeFromHistory(history, 30);
-            const p365 = Utils.getChangeFromHistory(history, 365);
-
+        sorted.forEach(row => {
+            const { asset, info, history, price, p1, p30, p365 } = row;
             const statusBadge = this._statusBadge(info);
 
             const tr = document.createElement('tr');
+            if (asset.id === this.state.activeAssetId) tr.classList.add('row-active');
             tr.innerHTML =
                 '<td>' +
                     '<div class="asset-cell">' +
@@ -434,6 +552,20 @@ const PortfolioApp = {
             tbody.appendChild(tr);
 
             this._renderMiniChart(tr.querySelector('.mini-chart'), history);
+        });
+    },
+
+    _sortRows(rows) {
+        const key = this.state.sortKey;
+        if (!key) return rows;
+        const dir = this.state.sortDir === 'asc' ? 1 : -1;
+        return rows.slice().sort((a, b) => {
+            const av = a[key];
+            const bv = b[key];
+            if (av == null && bv == null) return 0;
+            if (av == null) return 1;
+            if (bv == null) return -1;
+            return (av - bv) * dir;
         });
     },
 
@@ -469,6 +601,93 @@ const PortfolioApp = {
             i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
         });
         ctx.stroke();
+    },
+
+    _renderSummarySparkline(cardId) {
+        const card = document.getElementById(cardId);
+        if (!card) return;
+        let canvas = card.querySelector('.card-sparkline');
+        if (!canvas) {
+            canvas = document.createElement('canvas');
+            canvas.className = 'card-sparkline';
+            card.appendChild(canvas);
+        }
+        const points = this.state.assets
+            .map(a => StorageService.getHistory(a.id))
+            .filter(h => h.length > 1)
+            .flatMap(h => h.slice(-12).map(p => p.price));
+        if (points.length < 2) return;
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width = card.clientWidth - 32;
+        const h = canvas.height = 26;
+        const min = Math.min(...points);
+        const range = (Math.max(...points) - min) || 1;
+        ctx.clearRect(0, 0, w, h);
+        ctx.strokeStyle = '#c9a84c';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        points.forEach((p, i) => {
+            const x = (i / (points.length - 1)) * w;
+            const y = h - ((p - min) / range) * (h - 4) - 2;
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+    },
+
+    renderDistributionChart() {
+        const canvas = document.getElementById('distribution-chart');
+        if (!canvas) return;
+        const rows = this.state.assets
+            .map(a => {
+                const p = this.state.assetData[a.id]?.price;
+                const v = p != null ? p * (a.multiplier || 1) : 0;
+                return { label: a.name, value: v };
+            })
+            .filter(r => r.value > 0);
+        if (this.state.distributionChartInstance) this.state.distributionChartInstance.destroy();
+        if (!rows.length) return;
+        this.state.distributionChartInstance = new Chart(canvas.getContext('2d'), {
+            type: 'doughnut',
+            data: {
+                labels: rows.map(r => r.label),
+                datasets: [{ data: rows.map(r => r.value) }]
+            },
+            options: {
+                plugins: { legend: { labels: { color: '#94a3b8' } } },
+                maintainAspectRatio: false
+            }
+        });
+    },
+
+    updateTabCounts() {
+        const counts = this.state.assets.reduce((acc, a) => {
+            acc[a.type] = (acc[a.type] || 0) + 1;
+            return acc;
+        }, {});
+        document.querySelectorAll('#asset-type-tabs .tab-btn').forEach(btn => {
+            const key = btn.dataset.filter;
+            const count = key === 'all' ? this.state.assets.length : (counts[key] || 0);
+            const base = btn.textContent.split('(')[0].trim();
+            btn.innerHTML = base + '<span class="tab-count">' + count + '</span>';
+        });
+    },
+
+    _updateRefreshCountdown() {
+        const el = document.getElementById('refresh-info');
+        if (!el) return;
+        const left = Math.max(0, Math.floor((this.state.nextRefreshAt - Date.now()) / 1000));
+        const m = String(Math.floor(left / 60)).padStart(2, '0');
+        const s = String(left % 60).padStart(2, '0');
+        el.textContent = 'Sonraki yenileme: ' + m + ':' + s;
+    },
+
+    saveUserName() {
+        const input = document.getElementById('settings-user-name');
+        const result = StorageService.saveUserName(input.value);
+        if (!result.ok) return this.showBanner(result.reason, 'warning');
+        this.state.userName = StorageService.getUserName();
+        this._applyUserName();
+        this.showBanner('Kullanıcı adı güncellendi.', 'ok');
     },
 
     // ── Chart ──────────────────────────────────────────────
@@ -630,6 +849,7 @@ const PortfolioApp = {
                 day: 'numeric', month: 'short', year: 'numeric',
                 hour: '2-digit', minute: '2-digit', second: '2-digit'
             });
+            this._updateRefreshCountdown();
         };
         update();
         setInterval(update, 1000);
@@ -638,78 +858,48 @@ const PortfolioApp = {
     // ── View Switching ─────────────────────────────────────
     switchView(view) {
         this.state.activeView = view;
-        const main = document.querySelector('.main-content');
-        const injected = document.getElementById('injected-view');
-        if (injected) injected.remove();
+        document.querySelectorAll('.view-panel').forEach(panel => panel.classList.remove('active'));
+        const dashboardPanel = document.getElementById('view-dashboard');
+        const settingsPanel = document.getElementById('view-settings');
+        if (view === 'settings') settingsPanel.classList.add('active');
+        else dashboardPanel.classList.add('active');
 
-        const overlay = document.querySelector('.chart-empty-overlay');
-        if (overlay) overlay.remove();
-
+        const title = document.querySelector('.top-bar h2');
+        const subtitle = document.querySelector('.top-bar p');
+        const addBtn = document.getElementById('add-asset-btn');
+        const summary = document.querySelector('.summary-grid');
+        const chart = document.querySelector('.chart-section');
+        const assets = document.querySelector('.assets-section');
+        const distribution = document.querySelector('.portfolio-distribution');
         if (view === 'dashboard') {
-            main.querySelector('.summary-grid').style.display = 'grid';
-            main.querySelector('.chart-section').style.display = 'block';
-            main.querySelector('.assets-section').style.display = 'block';
-            main.querySelector('.top-bar h2').innerHTML = 'Hos Geldiniz, <span id="user-name">Yatırımcı</span>';
-            main.querySelector('.top-bar p').style.display = 'block';
-            document.getElementById('add-asset-btn').style.display = 'flex';
-            this.updateUI();
+            title.innerHTML = 'Hoş Geldiniz, <span id="user-name"></span>';
+            subtitle.style.display = 'block';
+            addBtn.style.display = 'flex';
+            summary.style.display = 'grid';
+            chart.style.display = 'block';
+            distribution.style.display = 'block';
+            assets.style.display = 'block';
+            this._applyUserName();
         } else if (view === 'assets') {
-            main.querySelector('.summary-grid').style.display = 'none';
-            main.querySelector('.chart-section').style.display = 'none';
-            main.querySelector('.assets-section').style.display = 'block';
-            main.querySelector('.top-bar h2').textContent = 'Varlıklarım';
-            main.querySelector('.top-bar p').style.display = 'none';
-            document.getElementById('add-asset-btn').style.display = 'flex';
-        } else if (view === 'settings') {
-            main.querySelector('.summary-grid').style.display = 'none';
-            main.querySelector('.chart-section').style.display = 'none';
-            main.querySelector('.assets-section').style.display = 'none';
-            main.querySelector('.top-bar h2').textContent = 'Ayarlar';
-            main.querySelector('.top-bar p').style.display = 'none';
-            document.getElementById('add-asset-btn').style.display = 'none';
-            this._renderSettings(main);
+            title.textContent = 'Varlıklarım';
+            subtitle.style.display = 'none';
+            addBtn.style.display = 'flex';
+            summary.style.display = 'none';
+            chart.style.display = 'none';
+            distribution.style.display = 'none';
+            assets.style.display = 'block';
+        } else {
+            title.textContent = 'Ayarlar';
+            subtitle.style.display = 'none';
+            addBtn.style.display = 'none';
+            summary.style.display = 'none';
+            chart.style.display = 'none';
+            distribution.style.display = 'none';
+            assets.style.display = 'none';
+            this._populateSupportedSymbols();
+            this._applyUserName();
+            PriceService.checkHealth().then(h => this._renderHealthResults(h));
         }
-    },
-
-    async _renderSettings(container) {
-        const div = document.createElement('div');
-        div.id = 'injected-view';
-        div.className = 'glass-card';
-        div.style.padding = '2.5rem';
-
-        div.innerHTML =
-            '<div class="settings-container">' +
-                '<section style="margin-bottom:2rem">' +
-                    '<h3 style="margin-bottom:1rem;color:var(--accent-primary)">Veri Sağlayıcı Durumu</h3>' +
-                    '<div id="provider-health" class="provider-health-grid">' +
-                        '<div class="provider-card loading">Truncgil Finans<br><small>Kontrol ediliyor...</small></div>' +
-                        '<div class="provider-card loading">CoinGecko<br><small>Kontrol ediliyor...</small></div>' +
-                        '<div class="provider-card loading">Binance<br><small>Kontrol ediliyor...</small></div>' +
-                    '</div>' +
-                '</section>' +
-                '<hr style="border:0;border-top:1px solid var(--glass-border);margin-bottom:2rem">' +
-                '<section style="margin-bottom:2rem">' +
-                    '<h3 style="margin-bottom:1rem;color:var(--accent-primary)">Desteklenen Semboller</h3>' +
-                    '<div id="supported-symbols" class="symbols-info"></div>' +
-                '</section>' +
-                '<hr style="border:0;border-top:1px solid var(--glass-border);margin-bottom:2rem">' +
-                '<section style="margin-bottom:2rem">' +
-                    '<h3 style="margin-bottom:1rem;color:var(--accent-primary)">Veri Yönetimi</h3>' +
-                    '<p style="color:var(--text-secondary);margin-bottom:1.5rem">Uygulama verileri tarayıcınızın <code>localStorage</code> alanında saklanmaktadır.</p>' +
-                    '<button class="btn btn-secondary" onclick="PortfolioApp.resetApp()" style="color:var(--down-color);border-color:var(--down-color)">Tüm Verileri Sıfırla</button>' +
-                '</section>' +
-                '<hr style="border:0;border-top:1px solid var(--glass-border);margin-bottom:2rem">' +
-                '<section>' +
-                    '<h3 style="margin-bottom:1rem">Uygulama Hakkında</h3>' +
-                    '<p style="color:var(--text-secondary)">PortfolioTrack v2.0.0<br>Çoklu sağlayıcı ile gerçek veri entegrasyonu.</p>' +
-                '</section>' +
-            '</div>';
-
-        container.appendChild(div);
-
-        this._populateSupportedSymbols();
-        const health = await PriceService.checkHealth();
-        this._renderHealthResults(health);
     },
 
     _renderHealthResults(health) {
@@ -755,15 +945,14 @@ const PortfolioApp = {
     },
 
     resetApp() {
-        if (confirm('Tüm verileriniz silinecek ve varsayılana dönülecek. Onaylıyor musunuz?')) {
-            this.state.assets = StorageService.reset();
-            this.state.assetData = {};
-            this.state.activeAssetId = this.state.assets[0]?.id || null;
-            this.state.dataStatus = { total: 0, real: 0, stale: 0, unavailable: 0 };
-            this.syncRealPrices().then(() => this.updateUI());
-            this.switchView('dashboard');
-            document.getElementById('nav-dashboard').click();
-        }
+        this.state.assets = StorageService.reset();
+        this.state.assetData = {};
+        this.state.userName = StorageService.getUserName();
+        this.state.activeAssetId = this.state.assets[0]?.id || null;
+        this.state.dataStatus = { total: 0, real: 0, stale: 0, unavailable: 0 };
+        this.syncRealPrices().then(() => this.updateUI());
+        this.switchView('dashboard');
+        document.getElementById('nav-dashboard').click();
     }
 };
 

@@ -5,6 +5,7 @@ const StorageService = {
     KEY: 'portfolio_track_assets',
     HISTORY_KEY: 'portfolio_track_history',
     META_KEY: 'portfolio_track_history_meta',
+    USER_KEY: 'portfolio_track_user',
     SCHEMA_VERSION: 2,
 
     DEFAULTS: [
@@ -164,7 +165,30 @@ const StorageService = {
         localStorage.removeItem(this.KEY);
         localStorage.removeItem(this.HISTORY_KEY);
         localStorage.removeItem(this.META_KEY);
+        localStorage.removeItem(this.USER_KEY);
         return this.DEFAULTS.map(d => ({ ...d }));
+    },
+
+    getUserName() {
+        const val = localStorage.getItem(this.USER_KEY);
+        return val && val.trim() ? val.trim() : 'Yatırımcı';
+    },
+
+    saveUserName(name) {
+        const cleaned = String(name || '').trim().slice(0, 30);
+        if (!cleaned) return { ok: false, reason: 'Ad boş olamaz' };
+        localStorage.setItem(this.USER_KEY, cleaned);
+        return { ok: true };
+    },
+
+    getStorageUsageKB() {
+        let bytes = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i) || '';
+            const val = localStorage.getItem(key) || '';
+            bytes += key.length + val.length;
+        }
+        return (bytes / 1024).toFixed(2);
     },
 
     _errorListeners: [],

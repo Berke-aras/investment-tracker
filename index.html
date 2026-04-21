@@ -59,6 +59,10 @@
                     <p>Bugün portföyünüzün özeti.</p>
                 </div>
                 <div class="user-actions">
+                    <div class="refresh-info" id="refresh-info">Sonraki yenileme: --:--</div>
+                    <button class="btn btn-secondary" id="refresh-now-btn">
+                        Yenile
+                    </button>
                     <button class="btn btn-primary" id="add-asset-btn">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                         Yeni Varlık
@@ -66,7 +70,8 @@
                 </div>
             </header>
 
-            <!-- Summary Cards -->
+            <!-- Dashboard View -->
+            <section class="view-panel active" id="view-dashboard">
             <section class="summary-grid">
                 <div class="glass-card summary-card" id="card-total-value">
                     <span class="card-label">Toplam Portföy</span>
@@ -87,6 +92,15 @@
                     <span class="card-label">Varlık Sayısı</span>
                     <div class="card-value">&mdash;</div>
                     <div class="card-trend neutral">Takip edilen</div>
+                </div>
+            </section>
+
+            <section class="portfolio-distribution glass-card">
+                <div class="section-header">
+                    <h3>Portföy Dağılımı</h3>
+                </div>
+                <div class="distribution-chart-container">
+                    <canvas id="distribution-chart"></canvas>
                 </div>
             </section>
 
@@ -136,6 +150,7 @@
             <section class="assets-section">
                 <div class="section-header">
                     <h3>Varlık Listesi</h3>
+                    <input id="asset-search-input" class="asset-search-input" type="text" placeholder="Varlık ara...">
                     <div class="asset-tabs" id="asset-type-tabs">
                         <button class="tab-btn active" data-filter="all">Tümü</button>
                         <button class="tab-btn" data-filter="fon">Fonlar</button>
@@ -150,10 +165,10 @@
                         <thead>
                             <tr>
                                 <th>Varlık</th>
-                                <th>Güncel Fiyat</th>
-                                <th>24S</th>
-                                <th>1 Ay</th>
-                                <th>1 Yıl</th>
+                                <th><button class="sort-btn" data-sort="price">Güncel Fiyat</button></th>
+                                <th><button class="sort-btn" data-sort="p1">24S</button></th>
+                                <th><button class="sort-btn" data-sort="p30">1 Ay</button></th>
+                                <th><button class="sort-btn" data-sort="p365">1 Yıl</button></th>
                                 <th>Gidişat</th>
                                 <th>Eylem</th>
                             </tr>
@@ -161,6 +176,46 @@
                         <tbody id="assets-table-body">
                         </tbody>
                     </table>
+                </div>
+            </section>
+            </section>
+
+            <section class="view-panel" id="view-assets"></section>
+
+            <section class="view-panel" id="view-settings">
+                <div class="glass-card settings-view-card">
+                    <div class="settings-container">
+                        <section class="settings-section">
+                            <h3>Veri Sağlayıcı Durumu</h3>
+                            <div id="provider-health" class="provider-health-grid">
+                                <div class="provider-card loading">Truncgil Finans<br><small>Kontrol ediliyor...</small></div>
+                                <div class="provider-card loading">CoinGecko<br><small>Kontrol ediliyor...</small></div>
+                                <div class="provider-card loading">Binance<br><small>Kontrol ediliyor...</small></div>
+                            </div>
+                        </section>
+                        <section class="settings-section">
+                            <h3>Desteklenen Semboller</h3>
+                            <div id="supported-symbols" class="symbols-info"></div>
+                        </section>
+                        <section class="settings-section">
+                            <h3>Kullanıcı Profili</h3>
+                            <div class="form-group">
+                                <label for="settings-user-name">Görünen Ad</label>
+                                <input id="settings-user-name" type="text" maxlength="30" placeholder="Adınızı girin">
+                            </div>
+                            <button class="btn btn-secondary" id="save-user-name-btn">Adı Kaydet</button>
+                        </section>
+                        <section class="settings-section">
+                            <h3>Veri Yönetimi</h3>
+                            <p>Uygulama verileri tarayıcınızın <code>localStorage</code> alanında saklanmaktadır.</p>
+                            <p id="storage-usage-text">Kullanım: -- KB</p>
+                            <button class="btn btn-secondary danger-outline" id="reset-data-btn">Tüm Verileri Sıfırla</button>
+                        </section>
+                        <section class="settings-section">
+                            <h3>Uygulama Hakkında</h3>
+                            <p>PortfolioTrack v2.0.0<br>Çoklu sağlayıcı ile gerçek veri entegrasyonu.</p>
+                        </section>
+                    </div>
                 </div>
             </section>
         </main>
@@ -177,7 +232,7 @@
                 <div class="form-group">
                     <label for="asset-name">Sembol</label>
                     <input type="text" id="asset-name" placeholder="Orn: BTC, XAU/TRY, USD/TRY, PHE" required maxlength="20">
-                    <small class="form-hint">Turk fonlari icin 3 harfli kod girin (orn: PHE, TB2, HZR). Hisse icin SPY.US gibi uzanti kullanin.</small>
+                    <small class="form-hint">Türk fonları için 3 harfli kod girin (örn: PHE, TB2, HZR). Hisse için SPY.US gibi uzantı kullanın.</small>
                 </div>
                 <div class="form-group">
                     <label for="asset-type">Varlık Türü</label>
@@ -192,11 +247,44 @@
                 <div class="form-group">
                     <label for="asset-quantity">Miktar / Çarpan</label>
                     <input type="number" id="asset-quantity" step="0.01" min="0.01" value="1" placeholder="Kaç adet/birim">
-                    <small class="form-hint">Portfoy degeri = anlik fiyat x miktar. Ornek: 2.5 gram altin veya 10 adet fon.</small>
+                    <small class="form-hint">Portföy değeri = anlık fiyat x miktar. Örnek: 2.5 gram altın veya 10 adet fon.</small>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary close-modal">İptal</button>
-                    <button type="submit" class="btn btn-primary">Varlığı Ekle</button>
+                    <button type="submit" class="btn btn-primary" id="submit-add-asset-btn">Varlığı Ekle</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="confirm-modal">
+        <div class="modal glass-card">
+            <div class="modal-header">
+                <h3 id="confirm-modal-title">Onay</h3>
+                <button class="close-modal" data-close-confirm>&times;</button>
+            </div>
+            <p id="confirm-modal-message" class="confirm-modal-message"></p>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-close-confirm>İptal</button>
+                <button type="button" class="btn btn-primary danger-solid" id="confirm-modal-ok-btn">Onayla</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="edit-asset-modal">
+        <div class="modal glass-card">
+            <div class="modal-header">
+                <h3>Miktar Düzenle</h3>
+                <button class="close-modal" data-close-edit>&times;</button>
+            </div>
+            <form id="edit-asset-form">
+                <div class="form-group">
+                    <label for="edit-asset-quantity">Yeni Miktar / Çarpan</label>
+                    <input type="number" id="edit-asset-quantity" step="0.01" min="0.01" required>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-close-edit>İptal</button>
+                    <button type="submit" class="btn btn-primary">Kaydet</button>
                 </div>
             </form>
         </div>
