@@ -28,23 +28,59 @@ const PortfolioApp = {
 
     // ── Bootstrap ──────────────────────────────────────────
     async init() {
+        StorageService.onError(msg => this.showBanner(msg, 'error'));
+        this.setupEventListeners();
+
+        FirebaseService.init();
+        FirebaseService.onSyncStateChange(s => this._renderSyncBadge(s));
+        FirebaseService.onAuthChange(user => this._onAuthStateChanged(user));
+
+        if (FirebaseService.isConfigured()) {
+            this._renderSyncBadge('loading');
+            await FirebaseService.signInAnonymously();
+        } else {
+            this._loadLocalAndStart();
+        }
+    },
+
+    _loadLocalAndStart() {
         this.state.assets = StorageService.getAssets();
         this.state.activeAssetId = this.state.assets[0]?.id || null;
         this.state.userName = StorageService.getUserName();
         this.state.nextRefreshAt = Date.now() + 300000;
         this._applyUserName();
-
-        StorageService.onError(msg => this.showBanner(msg, 'error'));
-
-        this.setupEventListeners();
+        this._updateAuthUI();
         this.renderStatusBanner('loading');
-        await this.syncRealPrices();
-        this.updateUI();
+        this.syncRealPrices().then(() => this.updateUI());
         this.startClock();
+        this._startRefreshTimer();
+    },
+
+    _startRefreshTimer() {
+        clearInterval(this._refreshTimer);
         this._refreshTimer = setInterval(() => {
             this.state.nextRefreshAt = Date.now() + 300000;
             this.syncRealPrices().then(() => this.updateUI());
         }, 300000);
+    },
+
+    async _onAuthStateChanged(user) {
+        if (!user) {
+            this._loadLocalAndStart();
+            return;
+        }
+
+        this.showBanner('Veriler yükleniyor...', 'loading');
+        try {
+            const merged = await FirebaseService.mergeCloudToLocal();
+            if (!merged) {
+                await FirebaseService.migrateLocalToCloud();
+            }
+        } catch (e) {
+            console.warn('Bulut senkron basarisiz:', e.message);
+        }
+
+        this._loadLocalAndStart();
     },
 
     // ── Data Sync ──────────────────────────────────────────
@@ -92,7 +128,12 @@ const PortfolioApp = {
         this.state.dataStatus = status;
         this.state.isLoading = false;
         StorageService.saveAssets(this.state.assets);
+        this._triggerCloudSync();
         this.renderStatusBanner();
+    },
+
+    _triggerCloudSync() {
+        FirebaseService.scheduleCloudSave();
     },
 
     async _backfillHistory(asset) {
@@ -259,6 +300,11 @@ const PortfolioApp = {
                 this.closeEditModal();
             }
         });
+
+        document.getElementById('btn-google-login').addEventListener('click', () => this._handleGoogleLogin());
+        document.getElementById('btn-sign-out').addEventListener('click', () => this._handleSignOut());
+        document.getElementById('settings-btn-google').addEventListener('click', () => this._handleGoogleLogin());
+        document.getElementById('settings-btn-signout').addEventListener('click', () => this._handleSignOut());
     },
 
     updateRangeButtons() {
@@ -277,10 +323,98 @@ const PortfolioApp = {
     },
 
     _applyUserName() {
+        const displayName = FirebaseService.getUserDisplayName();
+        const name = displayName || this.state.userName;
         const el = document.getElementById('user-name');
-        if (el) el.textContent = this.state.userName;
+        if (el) el.textContent = name;
         const input = document.getElementById('settings-user-name');
         if (input) input.value = this.state.userName;
+    },
+
+    // ── Auth UI ─────────────────────────────────────────
+    async _handleGoogleLogin() {
+        try {
+            await FirebaseService.signInWithGoogle();
+        } catch (e) {
+            this.showBanner('Google girişi başarısız: ' + e.message, 'error');
+        }
+    },
+
+    async _handleSignOut() {
+        await FirebaseService.signOut();
+    },
+
+    _updateAuthUI() {
+        const isAnon = FirebaseService.isAnonymous();
+        const configured = FirebaseService.isConfigured();
+        const user = FirebaseService.getUser();
+
+        const googleBtn = document.getElementById('btn-google-login');
+        const signOutBtn = document.getElementById('btn-sign-out');
+        const guestBadge = document.getElementById('auth-guest-badge');
+        const userInfo = document.getElementById('auth-user-info');
+        const avatar = document.getElementById('auth-avatar');
+        const displayName = document.getElementById('auth-display-name');
+
+        const settingsGoogleBtn = document.getElementById('settings-btn-google');
+        const settingsSignOutBtn = document.getElementById('settings-btn-signout');
+        const settingsAuthStatus = document.getElementById('settings-auth-status');
+
+        if (!configured) {
+            googleBtn.style.display = 'none';
+            signOutBtn.style.display = 'none';
+            guestBadge.style.display = 'none';
+            userInfo.style.display = 'none';
+            settingsGoogleBtn.style.display = 'none';
+            settingsSignOutBtn.style.display = 'none';
+            if (settingsAuthStatus) settingsAuthStatus.textContent = 'Firebase yapılandırılmamış.';
+            return;
+        }
+
+        if (!user || isAnon) {
+            googleBtn.style.display = 'inline-flex';
+            signOutBtn.style.display = 'none';
+            guestBadge.style.display = 'inline-block';
+            userInfo.style.display = 'none';
+            settingsGoogleBtn.style.display = 'inline-flex';
+            settingsSignOutBtn.style.display = 'none';
+            if (settingsAuthStatus) settingsAuthStatus.textContent = 'Misafir olarak kullanıyorsunuz. Google ile giriş yaparak verilerinizi bulutta saklayabilirsiniz.';
+        } else {
+            googleBtn.style.display = 'none';
+            signOutBtn.style.display = 'inline-flex';
+            guestBadge.style.display = 'none';
+
+            const photo = FirebaseService.getUserPhotoURL();
+            const name = FirebaseService.getUserDisplayName();
+            if (photo) {
+                avatar.src = photo;
+                userInfo.style.display = 'flex';
+            } else {
+                userInfo.style.display = 'none';
+            }
+            displayName.textContent = name || '';
+
+            settingsGoogleBtn.style.display = 'none';
+            settingsSignOutBtn.style.display = 'inline-flex';
+            if (settingsAuthStatus) settingsAuthStatus.textContent = (name || user.email || 'Google hesabı') + ' ile giriş yapıldı.';
+        }
+    },
+
+    _renderSyncBadge(state) {
+        const dot = document.getElementById('sync-dot');
+        const label = document.getElementById('sync-label');
+        if (!dot || !label) return;
+
+        dot.className = 'sync-dot ' + state;
+        const labels = {
+            idle: 'Yerel',
+            loading: 'Yükleniyor...',
+            saving: 'Kaydediliyor...',
+            synced: 'Bulut senkron',
+            error: 'Senkron hatası',
+            disabled: 'Sadece yerel'
+        };
+        label.textContent = labels[state] || state;
     },
 
     _updateStorageUsage() {
@@ -320,6 +454,7 @@ const PortfolioApp = {
         }
         asset.multiplier = parsed;
         StorageService.saveAssets(this.state.assets);
+        this._triggerCloudSync();
         this.closeEditModal();
         this.showBanner(asset.name + ' miktarı güncellendi.', 'ok');
         this.updateUI();
@@ -370,6 +505,7 @@ const PortfolioApp = {
         }
 
         StorageService.saveAssets(this.state.assets);
+        this._triggerCloudSync();
         document.getElementById('add-asset-modal').classList.remove('open');
         document.getElementById('add-asset-form').reset();
         submitBtn.disabled = false;
@@ -391,6 +527,7 @@ const PortfolioApp = {
                 this.state.activeAssetId = this.state.assets[0]?.id || null;
             }
             StorageService.saveAssets(this.state.assets);
+            this._triggerCloudSync();
             this.state.dataStatus.total = this.state.assets.length;
             this.updateUI();
         });
@@ -687,6 +824,7 @@ const PortfolioApp = {
         if (!result.ok) return this.showBanner(result.reason, 'warning');
         this.state.userName = StorageService.getUserName();
         this._applyUserName();
+        this._triggerCloudSync();
         this.showBanner('Kullanıcı adı güncellendi.', 'ok');
     },
 
@@ -898,6 +1036,8 @@ const PortfolioApp = {
             assets.style.display = 'none';
             this._populateSupportedSymbols();
             this._applyUserName();
+            this._updateAuthUI();
+            this._updateStorageUsage();
             PriceService.checkHealth().then(h => this._renderHealthResults(h));
         }
     },
@@ -950,6 +1090,7 @@ const PortfolioApp = {
         this.state.userName = StorageService.getUserName();
         this.state.activeAssetId = this.state.assets[0]?.id || null;
         this.state.dataStatus = { total: 0, real: 0, stale: 0, unavailable: 0 };
+        this._triggerCloudSync();
         this.syncRealPrices().then(() => this.updateUI());
         this.switchView('dashboard');
         document.getElementById('nav-dashboard').click();
