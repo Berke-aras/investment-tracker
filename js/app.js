@@ -90,9 +90,18 @@ const PortfolioApp = {
     async syncRealPrices() {
         this.state.isLoading = true;
         const status = { total: this.state.assets.length, real: 0, stale: 0, unavailable: 0 };
+        await PriceService.warmCryptoCache(this.state.assets);
+        const successfulAssets = [];
+        const priceResults = await Promise.allSettled(
+            this.state.assets.map(asset => PriceService.getPrice(asset))
+        );
 
-        for (const asset of this.state.assets) {
-            const result = await PriceService.getPrice(asset);
+        for (let i = 0; i < this.state.assets.length; i++) {
+            const asset = this.state.assets[i];
+            const settled = priceResults[i];
+            const result = settled?.status === 'fulfilled'
+                ? settled.value
+                : { ok: false, reason: settled?.reason?.message || 'Bilinmeyen hata' };
 
             if (result.ok) {
                 asset.currentPrice = result.price;
@@ -103,8 +112,7 @@ const PortfolioApp = {
                     change24h: result.change24h ?? null
                 };
                 status.real++;
-
-                await this._backfillHistory(asset);
+                successfulAssets.push(asset);
             } else {
                 const history = StorageService.getHistory(asset.id);
                 const last = history.length ? history[history.length - 1] : null;
@@ -127,6 +135,10 @@ const PortfolioApp = {
                 }
             }
         }
+
+        await Promise.allSettled(
+            successfulAssets.map(asset => this._backfillHistory(asset))
+        );
 
         this.state.dataStatus = status;
         this.state.isLoading = false;

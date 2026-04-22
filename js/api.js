@@ -19,7 +19,11 @@ const PriceService = {
         try {
             const res = await fetch(url, { signal: ctrl.signal });
             clearTimeout(timer);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            if (!res.ok) {
+                const err = new Error(`HTTP ${res.status}`);
+                err.status = res.status;
+                throw err;
+            }
             return await res.json();
         } catch (e) {
             clearTimeout(timer);
@@ -34,6 +38,9 @@ const PriceService = {
             try { return await fn(); }
             catch (e) {
                 lastErr = e;
+                if (e?.status >= 400 && e?.status < 500) {
+                    throw e;
+                }
                 if (i < attempts - 1) {
                     await new Promise(r => setTimeout(r, baseDelay * Math.pow(2, i)));
                 }
@@ -138,7 +145,11 @@ const PriceService = {
         try {
             const res = await fetch(url, { signal: ctrl.signal });
             clearTimeout(timer);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            if (!res.ok) {
+                const err = new Error(`HTTP ${res.status}`);
+                err.status = res.status;
+                throw err;
+            }
             return await res.text();
         } catch (e) {
             clearTimeout(timer);
@@ -306,7 +317,7 @@ const PriceService = {
         let data = null;
         try {
             data = await this._retry(() =>
-                this._fetchJSON('https://api.metals.live/v1/spot')
+                this._fetchJSON('https://api.metals.live/v1/spot', 3000), 1
             );
         } catch {
             // Some environments fail TLS/CORS on direct endpoint; use text proxy fallback.
@@ -406,6 +417,43 @@ const PriceService = {
         const price = data[coinId]?.try;
         const change24h = Number(data[coinId]?.try_24h_change);
         return price ? this._ok(price, 'CoinGecko', { change24h: isNaN(change24h) ? null : change24h }) : this._fail('CoinGecko: fiyat bulunamadi');
+    },
+
+    async warmCryptoCache(assets) {
+        const cryptoAssets = (assets || []).filter(a => (a?.type || 'emtia') === 'kripto');
+        if (!cryptoAssets.length) return;
+
+        const ids = [];
+        for (const asset of cryptoAssets) {
+            const sym = this._cryptoSymbol(asset);
+            const coinId = this.COINGECKO_MAP[sym];
+            if (!coinId) continue;
+            const ck = 'cg_' + coinId;
+            if (!this._getCached(ck, this.TTL.kripto)) {
+                ids.push(coinId);
+            }
+        }
+
+        const uniqueIds = [...new Set(ids)];
+        if (!uniqueIds.length) return;
+
+        try {
+            const data = await this._retry(() =>
+                this._fetchJSON(
+                    'https://api.coingecko.com/api/v3/simple/price?ids=' +
+                    encodeURIComponent(uniqueIds.join(',')) +
+                    '&vs_currencies=try&include_24hr_change=true'
+                )
+            );
+
+            for (const coinId of uniqueIds) {
+                if (data && data[coinId]) {
+                    this._setCache('cg_' + coinId, { [coinId]: data[coinId] });
+                }
+            }
+        } catch (e) {
+            console.warn('CoinGecko toplu onbellek hatasi:', e.message);
+        }
     },
 
     // ── Historical data: universal router ─────────────────
