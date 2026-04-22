@@ -250,16 +250,28 @@ const PriceService = {
     async _truncgilData() {
         const cached = this._getCached('_trunc', this.TTL.emtia);
         if (cached) return cached;
-        const data = await this._retry(() =>
-            this._fetchJSON('https://finans.truncgil.com/today.json')
-        );
+        let data;
+        try {
+            data = await this._retry(() =>
+                this._fetchJSON('https://finans.truncgil.com/today.json')
+            );
+        } catch {
+            // Some browser/network combinations intermittently fail direct fetch.
+            // Keep a text-proxy fallback for GitHub Pages compatibility.
+            const txt = await this._retry(() =>
+                this._fetchText('https://r.jina.ai/http://finans.truncgil.com/today.json', 15000), 2, 1000
+            );
+            const jsonStart = txt.indexOf('{');
+            if (jsonStart < 0) throw new Error('Truncgil proxy gecersiz yanit');
+            data = JSON.parse(txt.slice(jsonStart));
+        }
         this._setCache('_trunc', data);
         return data;
     },
 
     async _priceTruncgil(asset) {
         const data = await this._truncgilData();
-        const sym = (asset.symbol || asset.name || '').toUpperCase();
+        const sym = this._normalizeTruncgilSymbol(asset);
         const key = this.TRUNCGIL_MAP[sym];
 
         if (key && data[key]) {
@@ -583,16 +595,27 @@ const PriceService = {
     },
 
     _parseTR(val) {
+        if (typeof val === 'number') return isFinite(val) ? val : null;
         if (!val || typeof val !== 'string') return null;
         const num = parseFloat(val.replace(/\./g, '').replace(',', '.'));
         return isNaN(num) ? null : num;
     },
 
     _parsePercentTR(val) {
+        if (typeof val === 'number') return isFinite(val) ? val : null;
         if (!val || typeof val !== 'string') return null;
         const cleaned = val.replace('%', '').replace(/\./g, '').replace(',', '.');
         const num = parseFloat(cleaned);
         return isNaN(num) ? null : num;
+    },
+
+    _normalizeTruncgilSymbol(asset) {
+        const raw = (asset.symbol || asset.name || '').toUpperCase().trim();
+        if (raw) return raw;
+        const name = (asset.name || '').toLowerCase();
+        if (name.includes('alt')) return 'XAU/TRY';
+        if (name.includes('gum') || name.includes('güm')) return 'XAG/TRY';
+        return '';
     },
 
     // --- Main entry: get price with failover ---
