@@ -10,6 +10,9 @@ const FirebaseService = {
     _syncListeners: [],
     _syncState: 'idle',
     _debounceTimer: null,
+    _initialAuthResolved: false,
+    _initialAuthResolve: null,
+    _initialAuthPromise: null,
     DEBOUNCE_MS: 2000,
     HISTORY_CAP_CLOUD: 500,
 
@@ -22,7 +25,12 @@ const FirebaseService = {
         this._app = firebase.initializeApp(FIREBASE_CONFIG);
         this._auth = firebase.auth();
         this._db = firebase.firestore();
+        this._db.settings({
+            experimentalAutoDetectLongPolling: true,
+            useFetchStreams: false
+        });
         this._db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+        this._initialAuthPromise = new Promise(resolve => { this._initialAuthResolve = resolve; });
         this._auth.onAuthStateChanged(user => this._handleAuthChange(user));
     },
 
@@ -93,8 +101,24 @@ const FirebaseService = {
 
     onAuthChange(fn) { this._authListeners.push(fn); },
 
+    async waitForInitialAuthState(timeoutMs = 6000) {
+        if (this._initialAuthResolved) return this._user;
+        if (!this._initialAuthPromise) return this._user;
+        try {
+            await Promise.race([
+                this._initialAuthPromise,
+                new Promise(resolve => setTimeout(resolve, timeoutMs))
+            ]);
+        } catch {}
+        return this._user;
+    },
+
     _handleAuthChange(user) {
         this._user = user;
+        if (!this._initialAuthResolved) {
+            this._initialAuthResolved = true;
+            if (this._initialAuthResolve) this._initialAuthResolve(user);
+        }
         this._authListeners.forEach(fn => { try { fn(user); } catch {} });
     },
 

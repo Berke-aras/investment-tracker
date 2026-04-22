@@ -37,7 +37,10 @@ const PortfolioApp = {
 
         if (FirebaseService.isConfigured()) {
             this._renderSyncBadge('loading');
-            await FirebaseService.signInAnonymously();
+            const existingUser = await FirebaseService.waitForInitialAuthState();
+            if (!existingUser) {
+                await FirebaseService.signInAnonymously();
+            }
         } else {
             this._loadLocalAndStart();
         }
